@@ -1,0 +1,242 @@
+* { box-sizing: border-box; }
+
+*:focus { outline: solid 1px white; }
+
+:root {
+    --uv_color: rgb(70, 90, 80);
+    --pg_color: rgb(70, 80, 90);
+}
+
+
+body {
+    display: flex;
+    flex-direction: column;
+    background-color: gray;
+}
+
+main {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1rem;
+}
+
+.render_container {
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: center;
+    gap: 2rem;
+    margin: 0 1rem;
+}
+
+.canvas_container {
+    position: relative;
+    color: white;
+    font-family: monospace;
+    width: min(100%, 65vh);
+    aspect-ratio: 1.0;
+    border: solid 1px black;
+}
+
+canvas {
+    display: block;
+    touch-action: none;
+    width: 100%;
+    height: 100%;
+}
+
+input[type="file"] {
+    margin: 1rem;
+    align-self: center;
+    display: none;
+}
+
+input[type="checkbox"] {
+    margin: 0;
+    padding: 0;
+    cursor: pointer;
+}
+
+.checkbox_label { 
+    user-select: none;
+    padding-right: 0.5rem;
+    cursor: pointer;
+}
+
+#button_container {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    gap: 2rem;
+}
+
+.menu_container {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    right: 1px;
+    gap: 2px;
+    border-bottom: solid 1px white;
+}
+
+.checkbox_container {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    position: absolute;
+    bottom: 1px;
+    right: 1px;
+    padding: 0.25rem;
+}
+
+.counts_container {
+    display: flex;
+    flex-direction: row;
+    gap: 2rem;
+    justify-content: center;
+    font-family: monospace;
+    font-weight: bold;
+}
+
+.counts_container > p {
+    margin: 0;
+    padding: 0;
+}
+
+.simple_btn {
+    display: block;
+    align-self: center;
+    background-color: hsl(0,0%,30%);
+    color: hsl(30, 60%, 75%);
+    text-align: center;
+    width: 22ch;
+    padding: 1rem;
+    cursor: pointer;
+    user-select: none;
+    font-family: monospace;
+    font-weight: bold;
+    border: none;
+}
+
+#file_menu {
+    width: 20ch;
+    align-self: center;
+    text-align: center;
+    padding: 0.2rem;
+    margin: 1rem;
+    user-select: none;
+    font-family: monospace;
+}
+
+.render_menu {
+    text-align: center;
+    width: 100%;
+    background-color: var(--pg_color);
+    color: white;
+    border: none;
+    cursor: pointer;
+    font-family: monospace;
+    font-weight: bold;
+    font-size: 0.9rem;
+    user-select: none;
+}
+
+#uv_canvas {
+    background-color: var(--uv_color);
+}
+
+#orbit_canvas {
+    background-color: var(--pg_color);
+    cursor: move;
+    image-rendering: pixelated;
+}
+
+#wireframe_canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+#progress_outer_container {
+    position: absolute;
+    flex-direction: column;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgb(65, 55, 70);
+    border-radius: 4px;
+    border: solid 2px black;
+    text-align: center;
+    color: white;
+}
+
+#progress_inner_container {
+    padding: 0;
+    margin: min(2vw, 2rem) min(5vw, 3rem);
+    width: min(30vw, 200px);
+}
+
+#progress_text {
+    text-align: center;
+    font-family: monospace;
+    padding: 0;
+    margin: 0;
+    margin-bottom: 0.5rem;
+}
+
+#progress_bar_container {
+    display: flex;
+    align-items: center;
+    padding: 1px;
+    background-color: black;
+    border-radius: 2px;
+    width: 100%;
+}
+
+#progress_bar {
+    background-color: rgb(90, 75, 55);
+    width: 100%;
+    min-height: 0.3rem;
+}
+
+.disabled_input {
+    pointer-events: none;
+    cursor: default;
+    filter: contrast(50%);
+}
+
+.display_none { display: none; }
+
+@media screen and (max-width: 1000px) {
+    .render_container {
+        flex-direction: column-reverse;
+        align-items: center;
+        margin: 0 10%;
+        gap: 1rem;
+    }
+
+    #progress_outer_container {
+        top: 25%;
+        border-radius: 0;
+        border-width: 1px;
+    }
+}
+
+@media screen and (max-width: 500px) {
+    #button_container {
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .counts_container {
+        flex-direction: column;
+        gap: 0.5rem;
+        text-align: center;
+    }
+}

@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta name="description" content="Description goes here" />
+  <meta charset="utf-8">
+  <link rel="icon" href="data:,">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="resources/styles.css">
+  
+  <title>PLY File Reader</title>
+</head>
+
+<body>
+
+  <select id="file_menu" title="Model Select"></select>
+  
+  <main>
+
+    <!-- Upload/download buttons -->
+    <div id="button_container">
+      <div>
+        <button id="upload_btn" class="simple_btn" title="Upload ply model data">Load PLY</button>
+        <input id="file_input" type="file" accept=".ply,.PLY" />
+      </div>  
+      <button id="download_btn" class="simple_btn" title="Download ply data in JSON format">Download JSON</button>
+    </div>
+
+    <div class="render_container">
+
+      <!-- UV + Wireframe canvas & controls -->
+      <div class="canvas_container">
+        <canvas id="uv_canvas"></canvas>
+        <canvas id="wireframe_canvas"></canvas>
+        <div class="checkbox_container">
+            <label for="wireframe_checkbox" class="checkbox_label">Wireframe</label>
+            <input type="checkbox" id="wireframe_checkbox" checked />
+        </div>
+      </div>
+
+      <!-- Orbit canvas & controls -->
+      <div class="canvas_container">
+          
+        <canvas id="orbit_canvas"></canvas>
+
+        <div class="menu_container">
+            <select id="color_menu" class="render_menu" title="Coloring">
+                <option value="matcap" selected>Matcap</option>
+                <option value="colors">Colors</option>
+                <option value="uv">UV Space</option>
+                <option value="object_space">Object Space</option>
+                <option value="normals">Normals</option>
+            </select>
+
+            <select id="shade_menu" class="render_menu" title="Shading">
+                <option value="vertices">Vertices</option>
+                <option value="faces" selected>Faces</option>
+                <option value="triangles">Triangles</option>
+            </select>    
+
+            <select id="world_upright_menu" class="render_menu" title="Camera Orientation">
+              <option value="xy">XY Ori.</option>
+              <option value="xz">XZ Ori.</option>
+              <option value="yx">YX Ori.</option>
+              <option value="yz">YZ Ori.</option>
+              <option value="zx" selected>ZX Ori.</option>
+              <option value="zy">ZY Ori.</option>
+            </select>
+        </div>
+
+        <div class="checkbox_container">
+            <label for="orthographic_checkbox" class="checkbox_label">Orthographic</label>
+            <input type="checkbox" id="orthographic_checkbox" />
+        </div>
+      </div>
+
+      <!-- Progress bar -->
+      <div id="progress_outer_container" class="display_none">
+        <div id="progress_inner_container">
+          <label id="progress_text" for="progress_bar">Loading...</label>
+          <div id="progress_bar_container"><div id="progress_bar"></div></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Vertex/face/triangle counts text -->
+    <div class="counts_container">
+      <p>Vertices: <span id="vcount_text" class="count_text">0</span></p>
+      <p>Faces: <span id="fcount_text" class="count_text">0</span></p>
+      <p>Triangles: <span id="tcount_text" class="count_text">0</span></p>
+    </div>
+
+  </main>
+
+<script src="lib/matrix4.js"></script>
+<script src="lib/orbit.js"></script>
+<script src="lib/matcap.js"></script>
+<script src="lib/nonblocking_forloop.js"></script>
+<script src="lib/generate_attribute_data.js"></script>
+
+<script src="lib/wireframe_renderer.js"></script>
+<script src="lib/gl_renderers.js"></script>
+<script src="lib/load_ply.js"></script>
+<script src="lib/parse_ply.js"></script>
+
+<script src="resources/builtin_models.js"></script>
+
+<script>
+
+// -------------------------------------------------------------------------------------------------------------------
+// DOM Access
+
+const DOMID = {
+  canvas: {uv: "uv_canvas", orbit: "orbit_canvas", wireframe: "wireframe_canvas"},
+  progress: {bar: "progress_bar", text: "progress_text", container: "progress_outer_container"},
+  counts: {vertex: "vcount_text", face: "fcount_text", triangle: "tcount_text"},
+  menu: {color: "color_menu", shade: "shade_menu", world_upright: "world_upright_menu", file: "file_menu"},
+  checkbox: {orthographic: "orthographic_checkbox", wireframe: "wireframe_checkbox"},
+  button: {upload: "upload_btn", download: "download_btn"},
+  input: {file: "file_input"}
+}
+
+const CSSCLASS = {
+  hidden: "display_none",
+  disabled: "disabled_input"
+}
+
+
+// -------------------------------------------------------------------------------------------------------------------
+// Controls helper classes
+
+class Menu_Control {
+
+  constructor(elem_id) {
+    this.elem_ref = document.getElementById(elem_id);
+    this.value = null;
+    this.read();
+  }
+
+  enable = () => this.elem_ref.disabled = false;
+  disable = () => this.elem_ref.disabled = true;
+
+  read = () => {
+    let new_value = this.elem_ref.value;
+    if (typeof(new_value) === "string") {
+      new_value = new_value.toLowerCase();
+    }
+    this.value = new_value;
+
+    return new_value;
+  }
+
+  show = (show_control) => {
+    if (show_control) {
+      this.elem_ref.classList.remove(CSSCLASS.hidden);
+    } else {
+      this.elem_ref.classList.add(CSSCLASS.hidden);
+    }
+  }
+
+  show_option = (option_value, show_option) => {
+
+    // Show or hide the targeted option
+    const option_query = `option[value="${option_value}"]`;
+    const option_ref = this.elem_ref.querySelector(option_query);
+    option_ref.hidden = !show_option;
+
+    // Change setting if we were selecting the now hidden value
+    const selecting_hidden_option = (!show_option && this.value === option_value)
+    if (selecting_hidden_option) {
+      for (let option_idx = 0; option_idx < this.elem_ref.options.length; option_idx++) {
+        const option_ref = this.elem_ref.options[option_idx];
+        const option_is_visible = !option_ref.hidden;
+        if (option_is_visible) {
+          this.elem_ref.selectedIndex = option_idx;
+          this.read();
+          break;
+        }
+      }
+    }
+
+    return;
+  }
+
+  on_change = (callback) => {
+    this.elem_ref.addEventListener("change", () => {this.read(); callback(this.value)});
+  }
+}
+
+
+// ===================================================================================================================
+
+
+class Checkbox_Control {
+
+  constructor(elem_id) {
+    this.elem_ref = document.getElementById(elem_id);
+    this.label_ref = document.querySelector(`label[for=${elem_id}]`);
+    this.checked = false;
+    this.read();
+  }
+
+  enable = () => this.elem_ref.disabled = false;
+  disable = () => this.elem_ref.disabled = true;
+
+  read = () => {
+    this.checked = Boolean(this.elem_ref.checked);
+    return this.checked;
+  }
+
+  set = (is_checked) => {
+    this.elem_ref.checked = is_checked;
+    this.checked = is_checked;
+    return this.checked;
+  }
+
+  show = (show_control) => {
+    this.elem_ref.hidden = !show_control;
+    this.label_ref.hidden = !show_control;
+    return;
+  }
+
+  on_change = (callback) => {
+    this.elem_ref.addEventListener("change", () => {this.read(); callback(this.checked)});
+  }
+}
+
+
+// ===================================================================================================================
+
+
+class Button_Control {
+
+  constructor(elem_id) {
+    this.elem_ref = document.getElementById(elem_id);
+  }
+
+  enable = () => this.elem_ref.classList.remove(CSSCLASS.disabled);
+  disable = () => this.elem_ref.classList.add(CSSCLASS.disabled);
+  on_click = (callback) => this.elem_ref.addEventListener("click", callback);
+}
+
+
+// ===================================================================================================================
+
+
+class Progress_Bar {
+
+  constructor(container_id, label_id, bar_id) {
+    this.container_ref = document.getElementById(container_id);
+    this.label_ref = document.getElementById(label_id);
+    this.bar_ref = document.getElementById(bar_id);
+  }
+
+  update = (new_progress_pct) => this.bar_ref.style.width = `${Math.round(new_progress_pct)}%`;
+  
+  show = (show_control) => {
+
+    if (show_control) {
+      this.container_ref.classList.remove(CSSCLASS.hidden);
+    } else {
+      this.container_ref.classList.add(CSSCLASS.hidden);
+    }
+    
+    return;
+  }
+  
+  show_then_hide = (title, callback) => {
+    
+    requestAnimationFrame(() => {
+      this.set_title(title);
+      requestAnimationFrame(() => {
+        callback();
+        this.show(false);
+      });
+    })
+    
+    return;
+  }
+
+  set_title = (new_title, new_progress_pct = 100) => {
+
+    this.label_ref.innerText = new_title;
+
+    this.show(true);
+    this.update(new_progress_pct);
+
+    return;
+  }
+
+}
+
+
+// -------------------------------------------------------------------------------------------------------------------
+// Rendering setup
+
+// Set up renderers
+const WIREFRAME_RENDER = new WireframeRenderer(DOMID.canvas.wireframe);
+const ORBIT_RENDER = new OrbitRenderer(DOMID.canvas.orbit);
+const UV_RENDER = new UVRenderer(DOMID.canvas.uv);
+
+// Create a progress bar, used to indicate model data loading/parsing
+const PROGBAR = new Progress_Bar(DOMID.progress.container, DOMID.progress.text, DOMID.progress.bar);
+
+// Allocate storage for holding loaded model data
+const JSON_DATA = new PLY_to_JSON_Parser(PROGBAR);
+const ATTR_DATA = new Model_Attribute_Parser(PROGBAR);
+let CURRENT_FILENAME = null;
+
+// Set up mapping between UI keys and attribute data keys
+ATTR_DATA.set_ui_to_data_mapping({
+  "matcap": "placeholder",
+  "colors": "colors",
+  "uv": "uvs",
+  "object_space": "xyzs",
+  "normals": "normals",
+  "vertices": "vert",
+  "faces": "face",
+  "triangles": "tri"
+});
+
+
+// -------------------------------------------------------------------------------------------------------------------
+// Model statistics info
+
+const UI_TEXT = {
+
+  // DOM references
+  vert_count: document.getElementById(DOMID.counts.vertex),
+  face_count: document.getElementById(DOMID.counts.face),
+  tri_count: document.getElementById(DOMID.counts.triangle),
+
+  // Helper for updating text
+  set_counts: (vcount, fcount, tcount) => {
+
+    // Convert large numbers to simpler format, i.e. 1127748 -> 1.12M, or 55236 -> 55.2K
+    const nice_text = (value) => {
+      if (value > 1000000) return `${(value / 1000000).toPrecision(3)}M`;
+      if (value > 1000) return `${(value / 1000).toPrecision(3)}K`;
+      return value;
+    }
+
+    UI_TEXT.vert_count.innerText = nice_text(vcount);
+    UI_TEXT.face_count.innerText = nice_text(fcount);
+    UI_TEXT.tri_count.innerText = nice_text(tcount);
+  }
+}
+
+
+// -------------------------------------------------------------------------------------------------------------------
+// Page controls & listeners
+
+// Set up menu/checkbox controls
+const CTRLS = {
+  
+  // Menu controls
+  color_menu: new Menu_Control(DOMID.menu.color),
+  shade_menu: new Menu_Control(DOMID.menu.shade),
+  worldupright_menu: new Menu_Control(DOMID.menu.world_upright),
+  
+  // Checkbox controls
+  orthographic: new Checkbox_Control(DOMID.checkbox.orthographic),
+  wireframe: new Checkbox_Control(DOMID.checkbox.wireframe),
+  
+  // File in/out controls
+  model_menu: new Menu_Control(DOMID.menu.file),
+  upload: new Button_Control(DOMID.button.upload),
+  download: new Button_Control(DOMID.button.download)
+};
+
+
+CTRLS.color_menu.on_change(new_color_select => {
+  setup_shaders();
+  UV_RENDER.render();
+  ORBIT_RENDER.render();
+});
+
+CTRLS.shade_menu.on_change(new_shade_select => {
+  setup_shaders();
+  UV_RENDER.render();
+  ORBIT_RENDER.render();
+  
+  WIREFRAME_RENDER.set_shade_style(new_shade_select);
+  WIREFRAME_RENDER.render(ATTR_DATA);
+});
+
+CTRLS.orthographic.on_change(is_ortho => {
+  ORBIT_RENDER.set_orthographic(is_ortho);
+  ORBIT_RENDER.render();
+});
+
+CTRLS.worldupright_menu.on_change(new_camera_orientation => {
+  ORBIT_RENDER.set_camera_orientation(new_camera_orientation);
+  ORBIT_RENDER.render();
+});
+
+CTRLS.wireframe.on_change(show_wireframe => {
+  WIREFRAME_RENDER.enable(show_wireframe);
+  WIREFRAME_RENDER.render(ATTR_DATA);
+});
+
+const file_input_ref = document.getElementById(DOMID.input.file);
+CTRLS.upload.on_click(() => file_input_ref.click());
+CTRLS.download.on_click(download_json);
+
+
+// -------------------------------------------------------------------------------------------------------------------
+// Set up initial page data!
+
+// Set up model selection menu
+const PLY_LOADER = new PLY_File_Loader(DOMID.input.file, PROGBAR);
+PLY_LOADER.set_load_begin_callback(reset_for_new_data);
+PLY_LOADER.set_load_complete_callback(process_new_array_buffer);
+
+const FILE_MENU = new PLY_String_Loader_Menu(DOMID.menu.file, MODELS);
+FILE_MENU.set_load_begin_callback(reset_for_new_data);
+FILE_MENU.set_load_complete_callback(process_new_array_buffer);
+
+CTRLS.model_menu.show(false);
+PLY_LOADER.load_from_string("Monkey", MODELS.monkey);
+// PLY_LOADER.load_from_url("/data/monkey.ply");
+// FILE_MENU.select_model("monkey");
+
+
+// -------------------------------------------------------------------------------------------------------------------
+// Functions
+
+// ...................................................................................................................
+
+function reset_for_new_data() {
+  
+  reset_all_data();
+  disable_ui();
+
+  return;
+}
+
+// ...................................................................................................................
+
+async function process_new_array_buffer(filename, array_buffer) {
+
+  // Parse ply file data into json format & then clear out raw file reading data to free RAM
+  const json_ok = await JSON_DATA.parse_ply_from_array_buffer(array_buffer);
+  if (!json_ok) {
+    console.error("Unknown error parsing ply data to JSON format!");
+    return;
+  }
+
+  // Parse json into webgl attribute data
+  const data_ok = await ATTR_DATA.json_to_attributes(JSON_DATA.header_json, JSON_DATA.model_json);
+  if (!data_ok) {
+    console.error("Unknown error generating model attribute data from json!");
+    return;
+  }
+
+  // Update file name listing (mainly for downloads)
+  CURRENT_FILENAME = filename;
+
+  // Render the newly loaded data
+  PROGBAR.show_then_hide("Rendering", render_new_data);
+
+  // Re-enable controls for interaction
+  enable_ui();
+
+  return;
+}
+
+// ...................................................................................................................
+
+function render_new_data() {
+
+  /* Helper, which wraps all tasks performed when rendering newly loaded model data */
+
+  // Re-set the rendering & UI state
+  update_render_bounds();      
+  hide_unsupported_controls();
+  unset_heavy_wireframe();
+  update_counts_ui();
+
+  // Re-render everything
+  setup_shaders();
+  UV_RENDER.render();
+  ORBIT_RENDER.render();
+  WIREFRAME_RENDER.render(ATTR_DATA);
+
+  return;
+}
+
+// ...................................................................................................................
+
+function update_render_bounds() {
+
+  // Adjust camera to fit model in view
+  const max_xyz_delta = Math.max(...ATTR_DATA.bounds.xyz_deltas);
+  ORBIT_RENDER.set_model_bounds(max_xyz_delta, ATTR_DATA.bounds.xyz_mids);
+
+  return;
+}
+
+// ...................................................................................................................
+
+function hide_unsupported_controls() {
+
+  // Hide controls which the model data doesn't support
+  CTRLS.color_menu.show_option("colors", ATTR_DATA.has.vcolors);
+  CTRLS.color_menu.show_option("uv", ATTR_DATA.has.uvs);
+  CTRLS.wireframe.show(ATTR_DATA.has.uvs);
+
+  return;
+}
+
+// ...................................................................................................................
+
+function unset_heavy_wireframe(max_allowed_vertices = 50000) {
+
+  /* Function used to unset the wireframe rendering for large vertex counts (due to slow implementation) */
+
+  // By default, uncheck wireframe rendering if there are lots of vertices (avoid slow-downs)
+  const turn_off_wireframe = (ATTR_DATA.counts.vert > max_allowed_vertices);
+  if (turn_off_wireframe) {
+    CTRLS.wireframe.set(false);
+    WIREFRAME_RENDER.enable(false);
+  }
+
+  return;
+}
+
+// ...................................................................................................................
+
+function reset_all_data() {
+
+  /* Function used to clear out stored datasets, hopefully to trigger garbage collection */
+
+  // Wipe out old data references, to give garbage collection a chance to reclaim memory...
+  JSON_DATA.reset();
+  ATTR_DATA.reset();
+  WIREFRAME_RENDER.reset();
+  UV_RENDER.reset();
+  ORBIT_RENDER.reset();
+
+  return;
+}
+
+// ...................................................................................................................
+
+function disable_ui() {
+
+  // Disable page UI
+  ORBIT_RENDER.disable_ui();
+  
+  // Disable all control elements
+  for(let item of Object.values(CTRLS)) {
+    if (typeof(item.disable) === "function") {
+      item.disable();
+    }
+  }
+
+  return;
+}
+
+// ...................................................................................................................
+
+function enable_ui() {
+
+  // Re-enable page UI
+  ORBIT_RENDER.enable_ui();
+  
+  // Enable all control elements
+  for(let item of Object.values(CTRLS)) {
+    if (typeof(item.enable) === "function") {
+      item.enable();
+    }
+  }
+
+  return
+}
+
+// ...................................................................................................................
+
+function update_counts_ui() {
+
+  UI_TEXT.set_counts(ATTR_DATA.counts.vert, ATTR_DATA.counts.face, ATTR_DATA.counts.tri);
+
+  return;
+}
+
+// ...................................................................................................................
+
+function setup_shaders() {
+
+  /*
+  Function responsible for establishing shader program + webgl variable locations
+  (i.e. attributes/uniforms)
+  */
+
+  // Bail if model data isn't setup
+  if (!ATTR_DATA.available) {
+    console.error("Cannot set up shading. Model data unavailable!");
+    return;
+  }
+
+  // Read rendering settings
+  const color_select = CTRLS.color_menu.read();
+  const shade_select = CTRLS.shade_menu.read();
+
+  // Update main model rendering data
+  ORBIT_RENDER.set_attributes(color_select, shade_select, ATTR_DATA);
+  UV_RENDER.set_attributes(color_select, shade_select, ATTR_DATA);
+
+  // Set up color scaling (so rgb data is in nice 0-to-1 range)
+  const xyz_color_scale = 1.0 / Math.max(...ATTR_DATA.bounds.xyz_deltas);
+  const xyz_color_offset = ATTR_DATA.bounds.xyz_mids.map(item => 0.5 - (item * xyz_color_scale));
+  const color_scale_and_offset_lut = {
+      "matcap": [1, 0.25],
+      "colors": [1.0 / 255, 0],
+      "uv": [1, 0],
+      "object_space": [xyz_color_scale, xyz_color_offset],
+      "normals": [0.5, 0.5]
+  };
+  const [color_scale, color_offset] = color_scale_and_offset_lut[color_select];
+  ORBIT_RENDER.set_color_scaling(color_scale, color_offset);
+  UV_RENDER.set_color_scaling(color_scale, color_offset);
+
+  return;
+}
+
+// ...................................................................................................................
+
+function download_json() {
+
+  // Bail if there is no JSON data to download
+  if (!JSON_DATA.available) {
+    alert("No JSON data available to download!")
+    return;
+  }
+
+  // Give user a way to bail on downloading overly large data
+  const scary_ram_usage = (ATTR_DATA.counts.attr > 10000000);
+  if (scary_ram_usage) {
+    const msg_strs = [
+      "WARNING:",
+      "\n\n",
+      "Generating JSON data for the selected model will require a large amount of memory, ",
+      "the browser may crash if there is not enough RAM available!",
+      "\n\n",
+      "Are you sure you want to continue?"
+    ];
+    const user_continue = window.confirm(msg_strs.join(""));
+    if (!user_continue) return;
+  }
+
+  // Figure out download name (try to use original file name with .json extension)
+  let download_filename = "model.json";
+  if (typeof(CURRENT_FILENAME) === "string") {
+    const has_dot = CURRENT_FILENAME.includes(".");
+    const name_only = has_dot ? CURRENT_FILENAME.split(".").slice(0, -1) : [CURRENT_FILENAME];
+    download_filename = name_only.join(".") + ".json";
+  }
+
+  // Prevent ui interaction while preparing the download
+  disable_ui();
+  PROGBAR.show_then_hide("Preparing data for download", () => {
+
+    // Convert json data to text for download
+    // -> Need to be careful with js typed arrays, which convert to indexed objets by default
+    // -> e.g. Float32Array: [0.55, 0.75, 0.95] is stringified to: {"0": 0.55, "1": 0.75, "2": 0.95}
+    const convert_arraybuffer_to_array = (k, v) => ArrayBuffer.isView(v) ? Array.from(v) : v;
+    const blob_type = {type: "text/json"};
+    const data_blob = new Blob([JSON.stringify(JSON_DATA.model_json, convert_arraybuffer_to_array)], blob_type);
+    const blob_url = window.URL.createObjectURL(data_blob);
+
+    // Create anchor element, used to trigger download
+    const temp_anchor = document.createElement("a");
+    temp_anchor.download = download_filename;
+    temp_anchor.href = blob_url;
+
+    // Create callback used to detach download url data (and callback itself!) after download is triggered
+    const clear_download_data = () => {
+      temp_anchor.removeEventListener("click", clear_download_data);
+      setTimeout(() => URL.revokeObjectURL(blob_url), 250);
+    }
+
+    // Trigger download by 'clicking' the anchor
+    temp_anchor.addEventListener("click", clear_download_data);
+    temp_anchor.click();
+
+    // Allow user to interact with the page now that download is triggered
+    enable_ui();
+
+    return;
+  });
+
+  return;
+}
+
+
+// -------------------------------------------------------------------------------------------------------------------
+// TODO
+
+// - Add support for panning (using middle click, for example)
+// - Add better mobile support (for example, pinch to zoom)
+// - Move all rendering a single 'render class' to manage global obj. access more neatly
+// - Support rendering using the webgl 'drawElements' function in addition to 'drawArrays'
+//    -> May help reduce data requirements for certain meshes?
+// - Improve wireframe rendering (move to webgl for better speed?), and add zoom/pan to uv plot
+// - Clean up parsing functions (too much similar repeated code across ascii/binary parsing for example)
+// - Clean up disable/enable functionality (may be cases where page gets stuck in disabled state?)
+//    -> May be better to have invisible <div> cover the UI, instead of individually disabling each element?
+// - Add support for deleting 'faces' data when model contains only triangles (to save RAM)
+// - Add direct ply-to-attribute conversion if JSON download isn't needed (to save RAM)
+
+</script>
+
+</body>
+</html>
