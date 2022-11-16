@@ -6,7 +6,12 @@
 
 Continuing the trend of not-actually-making-a-game, I decided to look into understanding how 3D model data is encoded/represented for rendering. Oddly enough, this is something I've been curious about for many years now, long before experimenting with Unity, so this was actually a pretty satisfying project for me.
 
-The entire project boils down to the single html file included in this repo (along with all the imported css/js files from the other folders!). Opening the html file in a browser should 'just work' and doesn't require any fancy server setup or installation of any other software.
+The entire project boils down to the single html file included in this repo (along with all the imported css/js files from the other folders!). Opening the html file in a browser should 'just work' and doesn't require any fancy server setup or installation of any other software. Alternatively, a live running copy of the tool is [available on my blog](https://www.litfamiliar.com/posts/ply2json/).
+
+The idea is to provide a way to convert 3D models into a human-readable (-ish) JSON format (the [Firefox browser](https://www.mozilla.org/en-US/firefox/new/) has a nice built-in JSON viewer for example), to better understand how 3D model data is encoded. The tool also includes a model viewer.
+
+The free 3D modeling software [Blender](https://www.blender.org/) can export files into the PLY format required for this tool. Alternatively, I found some nice freely available PLY files from the company Artec3D, such as the [Garuda and Vishnu](https://www.artec3d.com/3d-models/garuda-and-vishnu) model seen in the screenshot above. Models can also be downloaded from Sketchfab, I tested this [model of a person](https://sketchfab.com/3d-models/clonescan3d-v2-example-38-109a5b3d14e84b9fa4f682eb15d93a1c) for example (another 3D scan!).
+
 
 ## Goals
 The idea was to take a text-readable model format (i.e. polygon file format, aka [PLY](https://en.wikipedia.org/wiki/PLY_(file_format))) and be able to convert the data into another format (javascript object notation, aka [JSON](https://en.wikipedia.org/wiki/JSON)) and ultimately render the model as well as it's UV map (if present). I figured that manipulating the model data into another format would require really understanding the data structuring, while rendering from that format would require understanding how the data is actually used in practice.
@@ -40,4 +45,4 @@ In order to properly visualize a 3D model on a 2D screen, some kind of lighting 
 
 Unlike more conventional texturing, which uses UV coordinates to sample from textures, matcaps use the normal vectors of a model, projected down to 2D relative to the camera view, as the texture sampling coordinates. If a texture with spherical lighting is used, then this can give the effect that the model is being rendered with high quality lighting, which changes as the model is rotated. Not only do these look pretty, but they made a lot of sense given that adding support for dynamic custom lighting or textures was outside the scope of this project.
 
-The matcap for this project is actually generated dynamically at runtime, which allows for experimenting with the colors.
+The matcap texture for this project is actually generated dynamically at runtime, which allows for experimenting with the colors.
